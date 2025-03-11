@@ -1,0 +1,15 @@
+{
+  "$schema": "resources/input.schema.json",
+  "hosts": {
+    "host1": { "cpu": 24, "ram": 512 },
+    "host2": { "cpu": 320, "ram": 768 }
+  },
+  "virtual_machines": {
+    "vm1": { "cpu": 3, "ram": 7 },
+    "vm2": { "cpu": 20, "ram": 40 },
+    "vm3": { "cpu": 128, "ram": 1024 }
+  },
+  "diff":{
+    "add": { "virtual_machines": [ "vm3" ] }
+  }
+}
