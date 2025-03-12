@@ -1,40 +1,75 @@
 import json
 
-class Sheduler():
+class Sheduler:
     def __init__(self):
-        input_dataset = open('../resources/input.schema.json', 'r', encoding='utf-8')
-        self.output_dataset = {"$schema": "resources/input.schema.json", 'allocations': {}, "allocation_failures": []}
-        self.input_data = json.load(input_dataset)
+        self.current_input = {}
+        self.current_output = {"$schema": "resources/input.schema.json", 'allocations': {}, "allocation_failures": [], 'migrations': {}}
+        self.previous_output = {}
+        self.previous_input = {}
         self.cpu = None
         self.ram = None
         self.vm = None
 
     def host_free_space_check(self):
-        for host in self.input_data['hosts']:
-            if self.input_data['hosts'][host]['cpu'] * 0.8 - self.cpu >= self.cpu and self.input_data['hosts'][host]['ram'] * 0.8 - self.ram >= self.ram:
-                self.output_dataset['allocations'].setdefault(host, []).append(self.vm)
+        for host in self.current_input['hosts']:
+            self.current_output['allocations'].setdefault(host, [])
+        for host in self.current_input['hosts']:
+            if self.current_input['hosts'][host]['cpu'] * 0.8 - self.cpu >= self.cpu and self.current_input['hosts'][host][
+                'ram'] * 0.8 - self.ram >= self.ram:
+                self.current_output['allocations'][host].append(self.vm)
                 break
         else:
             self.allocation_failures()
 
     def allocation_failures(self):
-        self.output_dataset['allocation_failures'].append(self.vm)
+        self.current_output['allocation_failures'].append(self.vm)
 
     def allocations(self):
-        for self.vm in self.input_data["virtual_machines"]:
-            self.cpu, self.ram = self.input_data['virtual_machines'][self.vm]['cpu'], self.input_data['virtual_machines'][self.vm]['ram']
+        for self.vm in self.current_input["virtual_machines"]:
+            self.cpu, self.ram = self.current_input['virtual_machines'][self.vm]['cpu'], self.current_input['virtual_machines'][self.vm]['ram']
             self.host_free_space_check()
 
-    def output_schema_creator(self):
+    def migrations(self):
+        if not self.previous_input:
+            return
+        for previous_host in self.previous_input['hosts']:
+            if self.previous_output['allocations'][previous_host] == self.current_output['allocations'][previous_host]:
+                continue
+            if not self.previous_output['allocations'][previous_host]:
+                pass
+            else:
+                for vm in self.previous_output['allocations'][previous_host]:
+                    for host in self.previous_input['hosts']:
+                        if vm in self.current_output['allocations'][host] and host != previous_host:
+                            self.current_output['migrations'].setdefault(vm, {'from': previous_host, 'to': host})
+
+
+
+    def run(self):
+        self.current_output = {"$schema": "resources/input.schema.json", 'allocations': {}, "allocation_failures": [], 'migrations': {}}
         self.allocations()
+        self.migrations()
+        self.current_output_generation()
+
+    def current_output_generation(self):
+        self.previous_output = self.current_output.copy()
+        self.previous_input = self.current_input.copy()
+        print(json.dumps(self.current_output, ensure_ascii=False, indent=2))
         with open('../resources/output.schema.json', 'w', encoding='utf-8') as output_schema:
-            json.dump(self.output_dataset, output_schema, ensure_ascii=False, indent=2)
+            json.dump(self.current_output, output_schema, ensure_ascii=False, indent=2)
 
 def main():
     sh = Sheduler()
-    sh.output_schema_creator()
+    while True:
+        try:
+            # Чтение данных из входного файла
+            input_line = input()  # Используем input() для чтения данных по строкам
+            if not input_line.strip():  # Если строка пустая, выходим из цикла
+                break
+            sh.current_input = json.loads(input_line)
+            sh.run()
+        except KeyboardInterrupt:
+            break  # Позволяет прервать выполнение Ctrl+C
 
 if __name__ == '__main__':
     main()
-
-
