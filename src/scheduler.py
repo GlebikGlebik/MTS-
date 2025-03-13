@@ -14,37 +14,48 @@ class Sheduler:
         self.vm_cpu = None
         self.vm_ram = None
         self.vm = None
+        self.process = None
+        self.sorted_hosts = None
+        self.test_output = {}
 
     def host_free_space_check(self):
-        # сортировка хостов по оставшейся на них памяти
-        sorted_hosts = sorted(self.current_input['hosts'].items(), key=lambda item: (item[1]['cpu'] * 0.8 - sum(
-            self.current_input['virtual_machines'][vm]['cpu'] for vm in
-            self.current_output['allocations'].get(item[0], [])), item[1]['ram'] * 0.8 - sum(
-            self.current_input['virtual_machines'][vm]['ram'] for vm in
-            self.current_output['allocations'].get(item[0], []))), reverse=True)
+        # Сортируем хосты по текущей загруженности
+        sorted_hosts = sorted(self.current_input['hosts'].items(), key=lambda item: (
+            sum(self.current_input['virtual_machines'][vm]['cpu'] for vm in
+                self.current_output['allocations'].get(item[0], [])) / item[1]['cpu'],
+            sum(self.current_input['virtual_machines'][vm]['ram'] for vm in
+                self.current_output['allocations'].get(item[0], [])) / item[1]['ram']
+        ))
 
-        for host, resources in sorted_hosts:
-            if host not in self.current_output['allocations']:
-                self.current_output['allocations'][host] = []
+        for host in self.current_input['hosts']:
+            self.current_output['allocations'].setdefault(host, [])
 
-            # считаем сколько ресурсов хоста было потрачено на уже размещенные виртуалки
-            used_cpu = sum(self.current_input['virtual_machines'][vm]['cpu'] for vm in self.current_output['allocations'][host])
-            used_ram = sum(self.current_input['virtual_machines'][vm]['ram'] for vm in self.current_output['allocations'][host])
+        for host in sorted_hosts:
+            # Считаем использованные ресурсы
+            used_cpu = sum(
+                self.current_input['virtual_machines'][vm]['cpu'] for vm in self.current_output['allocations'][host[0]])
+            used_ram = sum(
+                self.current_input['virtual_machines'][vm]['ram'] for vm in self.current_output['allocations'][host[0]])
 
             # Проверяем, можно ли разместить ВМ
-            if (resources['cpu'] * 0.8 - used_cpu - self.vm_cpu >= self.vm_cpu) and (resources['ram'] * 0.8 - used_ram - self.vm_ram >= self.vm_ram):
-                self.current_output['allocations'][host].append(self.vm)
+            if (used_cpu + self.vm_cpu <= host[1]['cpu'] * 0.8) and (used_ram + self.vm_ram <= host[1]['ram'] * 0.8):
+                self.current_output['allocations'][host[0]].append(self.vm)
                 return  # ВМ успешно размещена, выходим из функции
 
-        # Если не удалось разместить ВМ вызываем отметку о невозможности размещения
+        # Если не удалось разместить ВМ, вызываем отметку о невозможности размещения
         self.allocation_failures()
 
     def allocation_failures(self):
         self.current_output['allocation_failures'].append(self.vm)
 
     def allocations(self):
-        for self.vm in self.current_input["virtual_machines"]:
-            self.vm_cpu, self.vm_ram = self.current_input['virtual_machines'][self.vm]['cpu'], self.current_input['virtual_machines'][self.vm]['ram']
+        # Сортируем все вм по их требованиям по убыванию
+        sorted_vms = sorted(self.current_input["virtual_machines"].items(),
+                            key=lambda item: (item[1]['cpu'] + item[1]['ram']),
+                            reverse=True)
+
+        for self.vm, resources in sorted_vms:
+            self.vm_cpu, self.vm_ram = resources['cpu'], resources['ram']
             self.host_free_space_check()
 
     def migrations(self):
@@ -72,8 +83,6 @@ class Sheduler:
         self.previous_output = self.current_output.copy()
         self.previous_input = self.current_input.copy()
         print(json.dumps(self.current_output, ensure_ascii=False, indent=2))
-        with open('../resources/output.schema.json', 'w', encoding='utf-8') as output_schema:
-            json.dump(self.current_output, output_schema, ensure_ascii=False, indent=2)
 
 
 def main():
@@ -92,5 +101,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 
